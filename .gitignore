@@ -1,0 +1,76 @@
+# =========================
+# DATA (ignore large/generated data)
+# =========================
+data/raw/
+data/processed/
+data/results/
+
+# =========================
+# PYTHON
+# =========================
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Virtual environment
+venv/
+.env/
+.venv/
+
+# =========================
+# BUILD / DIST
+# =========================
+build/
+dist/
+*.egg-info/
+
+# =========================
+# LOGS & TEMP FILES
+# =========================
+*.log
+*.tmp
+*.swp
+
+# =========================
+# WSL / LINUX FILES
+# =========================
+.bash_history
+.bash_logout
+.bashrc
+.profile
+.python_history
+.sudo_as_admin_successful
+.motd_shown
+
+# =========================
+# SYSTEM FILES
+# =========================
+.DS_Store
+Thumbs.db
+
+# =========================
+# IDE / EDITOR
+# =========================
+.vscode/
+.idea/
+
+# =========================
+# MINIMAP / BINARIES
+# =========================
+minimap2/
+minimap2-*/
+*.out
+*.bin
+
+# =========================
+# JUPYTER (ako koristiš)
+# =========================
+.ipynb_checkpoints/
+
+# =========================
+# REPORTS / GENERATED FILES (optional)
+# =========================
+report/*.pdf
+report/*.png
+report/*.jpg
