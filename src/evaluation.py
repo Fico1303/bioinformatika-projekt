@@ -162,3 +162,22 @@ def compute_agreement(comparison_rows: List[Dict[str, object]]) -> float:
 
     agree = sum(1 for row in valid if row["methods_agree"] in [True, "True", "true", "TRUE"])
     return agree / len(valid)
+
+def add_true_label_to_row(row: Dict[str, object]) -> Dict[str, object]:
+    """
+    Doda true_label jednom retku.
+    """
+    new_row = dict(row)
+    new_row["true_label"] = extract_true_label(str(row["read_id"]))
+    return new_row
+
+
+def add_correct_flag_to_row(row: Dict[str, object]) -> Dict[str, object]:
+    """
+    Doda is_correct jednom retku.
+    """
+    new_row = dict(row)
+    new_row["is_correct"] = (
+        str(new_row.get("true_label", "")) == str(new_row.get("predicted_label", ""))
+    )
+    return new_row

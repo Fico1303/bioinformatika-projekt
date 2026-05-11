@@ -1,6 +1,6 @@
 import gzip
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, Iterator, List, Optional
 from Bio import SeqIO
 from Bio.SeqRecord import SeqRecord
 
@@ -9,7 +9,7 @@ def open_textfile(path: str):
     """
     Otvara običan ili gz-komprimirani tekstualni file.
     """
-    return gzip.open(path, "rt") if path.endswith(".gz") else open(path, "r")
+    return gzip.open(path, "rt") if path.endswith(".gz") else open(path, "r", encoding="utf-8")
 
 
 def load_all_fasta_sequences(path: str) -> str:
@@ -37,7 +37,7 @@ def load_first_fastq_read(path: str) -> SeqRecord:
         return next(SeqIO.parse(handle, "fastq"))
 
 
-def load_fastq_reads(path: str, limit: int = None) -> List[SeqRecord]:
+def load_fastq_reads(path: str, limit: Optional[int] = None) -> List[SeqRecord]:
     """
     Učita prvih 'limit' očitanja iz FASTQ filea.
     Ako je limit=None, učita sva očitanja.
@@ -52,6 +52,22 @@ def load_fastq_reads(path: str, limit: int = None) -> List[SeqRecord]:
                 break
 
     return reads
+
+
+def iter_fastq_reads(path: str, limit: Optional[int] = None) -> Iterator[SeqRecord]:
+    """
+    Streaming učitavanje FASTQ readova.
+    Ne drži sve readove u memoriji.
+    """
+    count = 0
+
+    with open_textfile(path) as handle:
+        for record in SeqIO.parse(handle, "fastq"):
+            yield record
+            count += 1
+
+            if limit is not None and count >= limit:
+                break
 
 
 def find_reference_files(raw_data_dir: str = "data/raw") -> Dict[str, str]:
@@ -72,7 +88,7 @@ def find_reference_files(raw_data_dir: str = "data/raw") -> Dict[str, str]:
 
     allowed_suffixes = {
         ".fasta", ".fa", ".fna",
-        ".fasta.gz", ".fa.gz", ".fna.gz"
+        ".fasta.gz", ".fa.gz", ".fna.gz",
     }
 
     references: Dict[str, str] = {}
@@ -80,7 +96,7 @@ def find_reference_files(raw_data_dir: str = "data/raw") -> Dict[str, str]:
     for bacterium_dir in sorted(p for p in raw_path.iterdir() if p.is_dir()):
         candidates = []
 
-        for file_path in bacterium_dir.iterdir():
+        for file_path in sorted(bacterium_dir.iterdir()):
             name = file_path.name.lower()
             if any(name.endswith(suffix) for suffix in allowed_suffixes):
                 candidates.append(file_path)
@@ -97,8 +113,6 @@ def find_reference_files(raw_data_dir: str = "data/raw") -> Dict[str, str]:
         raise ValueError(f"Nisam našao nijednu referencu u {raw_data_dir}")
 
     return references
-
-from pathlib import Path
 
 
 def find_fastq_files(raw_data_dir: str = "data/raw") -> Dict[str, List[str]]:
@@ -123,13 +137,13 @@ def find_fastq_files(raw_data_dir: str = "data/raw") -> Dict[str, List[str]]:
 
     allowed_suffixes = {
         ".fastq", ".fq",
-        ".fastq.gz", ".fq.gz"
+        ".fastq.gz", ".fq.gz",
     }
 
     fastq_files: Dict[str, List[str]] = {}
 
     for bacterium_dir in sorted(p for p in raw_path.iterdir() if p.is_dir()):
-        candidates = []
+        candidates: List[str] = []
 
         for file_path in sorted(bacterium_dir.iterdir()):
             name = file_path.name.lower()
@@ -140,47 +154,6 @@ def find_fastq_files(raw_data_dir: str = "data/raw") -> Dict[str, List[str]]:
             continue
 
         fastq_files[bacterium_dir.name] = candidates
-
-    if not fastq_files:
-        raise ValueError(f"Nisam našao nijedan FASTQ u {raw_data_dir}")
-
-    return fastq_files
-    """
-    Automatski pronađe FASTQ file u svakom bacterium folderu.
-
-    Vraća:
-    {
-        "bacterium1": "data/raw/bacterium1/neki_reads.fastq.gz",
-        ...
-    }
-    """
-    raw_path = Path(raw_data_dir)
-
-    if not raw_path.exists():
-        raise FileNotFoundError(f"Ne postoji direktorij: {raw_data_dir}")
-
-    allowed_suffixes = {
-        ".fastq", ".fq",
-        ".fastq.gz", ".fq.gz"
-    }
-
-    fastq_files = {}
-
-    for bacterium_dir in sorted(p for p in raw_path.iterdir() if p.is_dir()):
-        candidates = []
-
-        for file_path in bacterium_dir.iterdir():
-            name = file_path.name.lower()
-            if any(name.endswith(suffix) for suffix in allowed_suffixes):
-                candidates.append(file_path)
-
-        if not candidates:
-            continue
-
-        if len(candidates) > 1:
-            print(f"[WARN] Više FASTQ fileova u {bacterium_dir}. Uzimam prvi: {candidates[0].name}")
-
-        fastq_files[bacterium_dir.name] = str(candidates[0])
 
     if not fastq_files:
         raise ValueError(f"Nisam našao nijedan FASTQ u {raw_data_dir}")

@@ -1,7 +1,6 @@
 from pathlib import Path
 import csv
 
-import numpy as np
 import matplotlib.pyplot as plt
 
 from evaluation import load_results_csv
@@ -19,11 +18,11 @@ PLOTS_DIR = RESULTS_DIR / "plots"
 
 KMER_CSV = RESULTS_DIR / "kmer_assignments.csv"
 MINIMAP_CSV = RESULTS_DIR / "minimap2_assignments.csv"
-COMPARISON_CSV = RESULTS_DIR / "comparison.csv"
 
 
 def save_text(text: str, output_path: Path) -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
+
     with open(output_path, "w", encoding="utf-8") as handle:
         handle.write(text)
 
@@ -84,10 +83,12 @@ def plot_assignments_bar(results, title: str, output_path: Path) -> None:
     plt.figure(figsize=(8, 4))
     bars = plt.bar(labels, values)
 
+    max_value = max(values) if values else 1
+
     for bar, value in zip(bars, values):
         plt.text(
             bar.get_x() + bar.get_width() / 2,
-            value + max(values) * 0.01 if values else 0.1,
+            value + max_value * 0.01,
             str(value),
             ha="center"
         )
@@ -122,45 +123,12 @@ def plot_confusion_matrix(results, title: str, output_path: Path) -> None:
     plt.close()
 
 
-def plot_minimap_mapping_status(comparison_rows, output_path: Path) -> None:
-    mapped = 0
-    unmapped = 0
-
-    for row in comparison_rows:
-        minimap_pred = str(row.get("minimap_predicted", "")).strip()
-        if minimap_pred:
-            mapped += 1
-        else:
-            unmapped += 1
-
-    labels = ["Mapped", "Nema zapisa"]
-    values = [mapped, unmapped]
-
-    plt.figure(figsize=(6, 4))
-    bars = plt.bar(labels, values)
-
-    for bar, value in zip(bars, values):
-        plt.text(
-            bar.get_x() + bar.get_width() / 2,
-            value + max(values) * 0.01 if values else 0.1,
-            str(value),
-            ha="center"
-        )
-
-    plt.ylabel("Broj readova")
-    plt.title("Minimap2: prisutnost rezultata u comparison.csv")
-    plt.tight_layout()
-    plt.savefig(output_path, dpi=200)
-    plt.close()
-
-
 def main():
     PLOTS_DIR.mkdir(parents=True, exist_ok=True)
 
     print("[INFO] Učitavam CSV rezultate...")
     kmer_results = load_results_csv(KMER_CSV)
     minimap_results = load_results_csv(MINIMAP_CSV)
-    comparison_rows = load_results_csv(COMPARISON_CSV)
 
     print("[INFO] Računam classification report za k-mer...")
     kmer_report = compute_classification_report(kmer_results)
@@ -177,21 +145,38 @@ def main():
     save_report_csv(minimap_report, PLOTS_DIR / "minimap2_classification_report.csv")
 
     print("[INFO] Crtam grafove...")
-    plot_accuracy_comparison(kmer_results, minimap_results, PLOTS_DIR / "accuracy_comparison.png")
-    plot_assignments_bar(kmer_results, "k-mer: broj readova po predikciji", PLOTS_DIR / "kmer_assignments_bar.png")
-    plot_assignments_bar(minimap_results, "minimap2: broj readova po predikciji", PLOTS_DIR / "minimap_assignments_bar.png")
-    plot_confusion_matrix(kmer_results, "k-mer confusion matrix", PLOTS_DIR / "kmer_confusion_matrix.png")
-    plot_confusion_matrix(minimap_results, "minimap2 confusion matrix", PLOTS_DIR / "minimap_confusion_matrix.png")
-    plot_minimap_mapping_status(comparison_rows, PLOTS_DIR / "minimap_mapping_status.png")
 
-    print("[INFO] Gotovo. Spremljeno u:")
-    print(f"  {PLOTS_DIR}")
+    plot_accuracy_comparison(
+        kmer_results,
+        minimap_results,
+        PLOTS_DIR / "accuracy_comparison.png"
+    )
 
-    print("\n[INFO] k-mer classification report:\n")
-    print(kmer_report_text)
+    plot_assignments_bar(
+        kmer_results,
+        "k-mer: broj readova po predikciji",
+        PLOTS_DIR / "kmer_assignments_bar.png"
+    )
 
-    print("\n[INFO] minimap2 classification report:\n")
-    print(minimap_report_text)
+    plot_assignments_bar(
+        minimap_results,
+        "minimap2: broj readova po predikciji",
+        PLOTS_DIR / "minimap2_assignments_bar.png"
+    )
+
+    plot_confusion_matrix(
+        kmer_results,
+        "k-mer confusion matrix",
+        PLOTS_DIR / "kmer_confusion_matrix.png"
+    )
+
+    plot_confusion_matrix(
+        minimap_results,
+        "minimap2 confusion matrix",
+        PLOTS_DIR / "minimap2_confusion_matrix.png"
+    )
+
+    print(f"[INFO] Gotovo. Spremljeno u: {PLOTS_DIR}")
 
 
 if __name__ == "__main__":
