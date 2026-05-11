@@ -1,29 +1,56 @@
 # 🧬 Bacterial Genome Analysis Pipeline
 
-Ovaj projekt služi za analizu bakterijskih podataka koristeći FASTA referencu i FASTQ sekvence.
+Ovaj projekt služi za analizu bakterijskih sekvenci koristeći:
+
+* k-mer klasifikaciju
+* minimap2 baseline pristup
+
+Pipeline uspoređuje rezultate obje metode i generira:
+
+* ukupne metrike
+* rezultate po bakteriji
+* classification reportove
+* confusion matrix grafove
 
 ---
 
-## 📁 Struktura podataka
+## 📥 Ulazni podaci
 
-Podaci se organiziraju unutar direktorija:
+Pipeline koristi jedan FASTQ uzorak:
 
+```text
+data/processed/uzorak.fastq
 ```
+
+Potrebno je uploadati ili kopirati FASTQ datoteku pod nazivom:
+
+```text
+uzorak.fastq
+```
+
+u direktorij:
+
+```text
+data/processed/
+```
+
+---
+
+## 🧬 Reference
+
+Referentni genomi moraju biti organizirani po bakterijama unutar:
+
+```text
 data/raw/{naziv_bakterije}/
 ```
 
-Za svaku bakteriju potrebno je osigurati:
-
-* **Referentni genom** u `.fasta` formatu
-* **Sekvencijske podatke** u `.fastq.gz` formatu
+Svaka bakterija mora sadržavati FASTA referencu.
 
 ### Primjer:
 
-```
-data/raw/e_coli/
-├── reference.fasta
-├── sample_1.fastq.gz
-├── sample_2.fastq.gz
+```text
+data/raw/e_coli/reference.fasta
+data/raw/salmonella/reference.fasta
 ```
 
 ---
@@ -32,7 +59,7 @@ data/raw/e_coli/
 
 Glavna skripta projekta nalazi se u:
 
-```
+```text
 src/main.py
 ```
 
@@ -46,7 +73,11 @@ python src/main.py
 
 ## 📦 Instalacija ovisnosti
 
-Sve potrebne biblioteke nalaze se u `requirements.txt`.
+Sve potrebne biblioteke nalaze se u:
+
+```text
+requirements.txt
+```
 
 Instalacija:
 
@@ -56,23 +87,8 @@ pip install -r requirements.txt
 
 ---
 
-## 🧪 Napomena
+## 🧪 Napomene
 
-* Svaka bakterija mora imati vlastiti direktorij unutar `data/raw/`
-* Skripta automatski obrađuje dostupne podatke iz tog direktorija
 * Preporučuje se korištenje virtualnog okruženja (`venv`)
-
----
-
-## 📄 Struktura projekta (sažetak)
-
-```
-.
-├── data/
-│   └── raw/
-├── src/
-│   ├── main.py
-│   └── ...
-├── requirements.txt
-└── README.md
-```
+* Rezultati se spremaju u `data/results/`
+* Grafovi i reportovi spremaju se u `data/results/plots/`
