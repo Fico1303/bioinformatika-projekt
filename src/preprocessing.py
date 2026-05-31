@@ -1,3 +1,5 @@
+# Kod napisao: Domagoj Matković
+
 import gzip
 import os
 from typing import Dict

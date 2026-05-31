@@ -1,11 +1,28 @@
+# Kod napisao: Filip Paić
+
 from pathlib import Path
 import subprocess
-from collections import defaultdict
+from typing import Dict, Any
 
 from Bio import SeqIO
 
-from io_utils import find_reference_files
-from evaluation import add_true_labels, add_correct_flag, compute_accuracy, save_results_csv
+from io_utils import (
+    open_textfile,
+    find_reference_files,
+    ensure_directories,
+    print_section,
+)
+
+from evaluation import (
+    add_true_labels,
+    add_correct_flag,
+    save_results_csv,
+)
+
+from metrics import (
+    compute_accuracy,
+    count_predictions_by_label,
+)
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -22,22 +39,28 @@ MINIMAP_ASSIGNMENTS_CSV = RESULTS_DIR / "minimap2_assignments.csv"
 MINIMAP2_PRESET = "map-ont"
 
 
-def build_combined_reference(reference_files, output_fasta):
+def build_combined_reference(reference_files: Dict[str, str], output_fasta: Path) -> Path:
     """
     Spoji sve referentne genome u jedan FASTA.
+
     Header svakog contiga označi prefiksom bakterije:
+
         >bacterium1|original_header
+
+    Tako se kasnije iz PAF target_name može dobiti predicted_label.
     """
-    output_fasta.parent.mkdir(parents=True, exist_ok=True)
+    ensure_directories(output_fasta.parent)
 
     written = 0
+
     with open(output_fasta, "w", encoding="utf-8") as out_handle:
         for label, fasta_path in reference_files.items():
-            for record in SeqIO.parse(str(fasta_path), "fasta"):
-                record.id = f"{label}|{record.id}"
-                record.description = ""
-                SeqIO.write(record, out_handle, "fasta")
-                written += 1
+            with open_textfile(fasta_path) as in_handle:
+                for record in SeqIO.parse(in_handle, "fasta"):
+                    record.id = f"{label}|{record.id}"
+                    record.description = ""
+                    SeqIO.write(record, out_handle, "fasta")
+                    written += 1
 
     if written == 0:
         raise ValueError("Nijedna referentna sekvenca nije upisana u combined FASTA.")
@@ -45,15 +68,21 @@ def build_combined_reference(reference_files, output_fasta):
     return output_fasta
 
 
-def run_minimap2(reference_fasta, reads_path, paf_path, preset="map-ont"):
+def run_minimap2(
+    reference_fasta: Path,
+    reads_path: Path,
+    paf_path: Path,
+    preset: str = "map-ont",
+) -> Path:
     """
     Pokreni minimap2 i spremi izlaz u PAF.
     """
-    paf_path.parent.mkdir(parents=True, exist_ok=True)
+    ensure_directories(paf_path.parent)
 
     cmd = [
         "minimap2",
-        "-x", preset,
+        "-x",
+        preset,
         str(reference_fasta),
         str(reads_path),
     ]
@@ -62,7 +91,12 @@ def run_minimap2(reference_fasta, reads_path, paf_path, preset="map-ont"):
     print("[CMD]", " ".join(cmd))
 
     with open(paf_path, "w", encoding="utf-8") as out_handle:
-        result = subprocess.run(cmd, stdout=out_handle, stderr=subprocess.PIPE, text=True)
+        result = subprocess.run(
+            cmd,
+            stdout=out_handle,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
 
     if result.returncode != 0:
         raise RuntimeError(
@@ -75,7 +109,7 @@ def run_minimap2(reference_fasta, reads_path, paf_path, preset="map-ont"):
     return paf_path
 
 
-def parse_paf_best_hits(paf_path):
+def parse_paf_best_hits(paf_path: Path) -> Dict[str, Dict[str, Any]]:
     """
     Pročitaj PAF i za svaki read zadrži najbolji hit.
 
@@ -87,13 +121,15 @@ def parse_paf_best_hits(paf_path):
     """
     best_hits = {}
 
-    with open(paf_path, encoding="utf-8") as handle:
+    with open(paf_path, "r", encoding="utf-8") as handle:
         for line in handle:
             line = line.strip()
+
             if not line:
                 continue
 
             parts = line.split("\t")
+
             if len(parts) < 12:
                 continue
 
@@ -103,12 +139,13 @@ def parse_paf_best_hits(paf_path):
             aln_block = int(parts[10])
             mapq = int(parts[11])
 
-            identity = (n_match / aln_block) if aln_block > 0 else 0.0
+            identity = n_match / aln_block if aln_block > 0 else 0.0
+            predicted_label = target_name.split("|", 1)[0]
 
             candidate = {
                 "read_id": query_name,
                 "target_name": target_name,
-                "predicted_label": target_name.split("|")[0],
+                "predicted_label": predicted_label,
                 "n_match": n_match,
                 "aln_block": aln_block,
                 "identity": round(identity, 6),
@@ -120,44 +157,46 @@ def parse_paf_best_hits(paf_path):
             if query_name not in best_hits or rank > best_hits[query_name][0]:
                 best_hits[query_name] = (rank, candidate)
 
-    return {read_id: data for read_id, (_, data) in best_hits.items()}
+    return {
+        read_id: candidate
+        for read_id, (_, candidate) in best_hits.items()
+    }
 
 
-def summarize_assignments(rows):
-    """
-    Prebroji koliko readova je dodijeljeno kojem genomu.
-    """
-    counts = defaultdict(int)
-    for row in rows:
-        counts[str(row["predicted_label"])] += 1
-    return dict(sorted(counts.items()))
-
-
-def main():
+def main() -> None:
     if not RAW_DATA_DIR.exists():
         raise FileNotFoundError(f"Ne postoji direktorij s referencama: {RAW_DATA_DIR}")
 
     if not READS_PATH.exists():
         raise FileNotFoundError(f"Ne postoji reads datoteka: {READS_PATH}")
 
-    print("[INFO] Tražim reference...")
-    reference_files = find_reference_files(str(RAW_DATA_DIR))
+    ensure_directories(OUTPUT_DIR, RESULTS_DIR)
 
-    if not reference_files:
-        raise ValueError(f"Nisam našao reference u: {RAW_DATA_DIR}")
+    print_section("Traženje referenci")
+
+    reference_files = find_reference_files(RAW_DATA_DIR)
 
     print("[INFO] Nađene reference:")
     for label, path in reference_files.items():
         print(f"  - {label}: {path}")
 
-    print("\n[INFO] Gradim combined reference FASTA...")
+    print_section("Izrada combined reference FASTA")
+
     build_combined_reference(reference_files, COMBINED_REFERENCE_PATH)
+
     print(f"[INFO] Combined FASTA: {COMBINED_REFERENCE_PATH}")
 
-    print("\n[INFO] Pokrećem minimap2 mapiranje...")
-    run_minimap2(COMBINED_REFERENCE_PATH, READS_PATH, PAF_PATH, preset=MINIMAP2_PRESET)
+    print_section("Minimap2 mapiranje")
 
-    print("\n[INFO] Čitam najbolja mapiranja po readu...")
+    run_minimap2(
+        COMBINED_REFERENCE_PATH,
+        READS_PATH,
+        PAF_PATH,
+        preset=MINIMAP2_PRESET,
+    )
+
+    print_section("Parsiranje najboljih mapiranja")
+
     best_hits = parse_paf_best_hits(PAF_PATH)
 
     if not best_hits:
@@ -168,13 +207,16 @@ def main():
     results = add_correct_flag(results)
 
     accuracy = compute_accuracy(results)
-    counts = summarize_assignments(results)
+    counts = count_predictions_by_label(results)
 
     save_results_csv(results, MINIMAP_ASSIGNMENTS_CSV)
+
     print(f"[INFO] Spremljeni minimap assignmenti: {MINIMAP_ASSIGNMENTS_CSV}")
 
     print("\n[RESULT] Broj readova po genomu:")
+
     total = 0
+
     for label, count in counts.items():
         print(f"  - {label}: {count}")
         total += count
@@ -183,9 +225,8 @@ def main():
     print(f"[RESULT] Minimap2 accuracy: {accuracy:.4f}")
 
     print("\n[INFO] Primjer nekoliko najboljih hitova:")
-    for i, row in enumerate(results):
-        if i >= 10:
-            break
+
+    for i, row in enumerate(results[:10]):
         print(
             f"Read: {row['read_id']}\n"
             f"  True: {row['true_label']}\n"

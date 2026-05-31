@@ -1,30 +1,45 @@
+# Kod napisao: Filip Paić
+
 from pathlib import Path
 import csv
 import shutil
-from collections import defaultdict, Counter
 
-from io_utils import find_reference_files, iter_fastq_reads
-from classifier import build_reference_profiles, classify_reads_iter
+from io_utils import (
+    find_reference_files,
+    iter_fastq_reads,
+    ensure_directories,
+    print_section,
+    save_aggregate_results,
+)
+
+from classifier import (
+    build_reference_profiles,
+    classify_reads_iter,
+)
+
 from evaluation import (
     add_true_labels,
     add_correct_flag,
     add_true_label_to_row,
     add_correct_flag_to_row,
-    compute_accuracy,
     save_results_csv,
     compare_methods,
-    compute_agreement,
 )
+
+from metrics import (
+    compute_accuracy,
+    compute_agreement,
+    compute_classification_report,
+    format_classification_report,
+    count_predictions_by_label,
+)
+
 from minimap_baseline import (
     build_combined_reference,
     run_minimap2,
     parse_paf_best_hits,
-    summarize_assignments,
 )
-from metrics import (
-    compute_classification_report,
-    format_classification_report,
-)
+
 from plots import (
     save_text,
     save_report_csv,
@@ -62,38 +77,16 @@ MINIMAP2_PRESET = "map-ont"
 
 
 # =========================================================
-# HELPERS
-# =========================================================
-
-def ensure_directories() -> None:
-    PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
-    RESULTS_DIR.mkdir(parents=True, exist_ok=True)
-    PLOTS_DIR.mkdir(parents=True, exist_ok=True)
-    MINIMAP_DIR.mkdir(parents=True, exist_ok=True)
-
-
-def print_section(title: str) -> None:
-    print("\n" + "=" * 70)
-    print(title)
-    print("=" * 70)
-
-
-def as_bool(value) -> bool:
-    if isinstance(value, bool):
-        return value
-
-    return str(value).strip().lower() in {"true", "1", "yes", "da"}
-
-
-def format_counts(counter: Counter) -> str:
-    return "; ".join(f"{label}={count}" for label, count in counter.items())
-
-
-# =========================================================
 # PIPELINE STEPS
 # =========================================================
 
 def run_kmer_classification():
+    """
+    Pokreće k-mer klasifikaciju nad ulaznim FASTQ očitanjima.
+
+    Vraća listu rezultata s predikcijama, stvarnim labelama
+    i oznakom točnosti za svaki read.
+    """
     print_section("1) K-MER KLASIFIKACIJA")
 
     if not RAW_DATA_DIR.exists():
@@ -148,6 +141,11 @@ def run_kmer_classification():
 
 
 def run_minimap2_baseline():
+    """
+    Pokreće minimap2 baseline metodu nad istim ulaznim FASTQ očitanjima.
+
+    Vraća listu rezultata s najboljim mapiranjem za svaki read.
+    """
     print_section("2) MINIMAP2 BASELINE")
 
     if shutil.which("minimap2") is None:
@@ -185,7 +183,7 @@ def run_minimap2_baseline():
     results = add_correct_flag(results)
 
     accuracy = compute_accuracy(results)
-    counts = summarize_assignments(results)
+    counts = count_predictions_by_label(results)
 
     save_results_csv(results, MINIMAP_ASSIGNMENTS_CSV)
 
@@ -199,100 +197,13 @@ def run_minimap2_baseline():
     return results
 
 
-def save_aggregate_results(kmer_results, minimap_results, comparison_rows) -> None:
-    kmer_accuracy = compute_accuracy(kmer_results)
-    minimap_accuracy = compute_accuracy(minimap_results)
-    agreement = compute_agreement(comparison_rows)
-
-    overall_rows = [
-        {"metric": "kmer_accuracy", "value": f"{kmer_accuracy:.6f}"},
-        {"metric": "minimap2_accuracy", "value": f"{minimap_accuracy:.6f}"},
-        {"metric": "methods_agreement", "value": f"{agreement:.6f}"},
-        {"metric": "kmer_n_results", "value": str(len(kmer_results))},
-        {"metric": "minimap2_n_results", "value": str(len(minimap_results))},
-        {"metric": "comparison_n_rows", "value": str(len(comparison_rows))},
-    ]
-
-    with open(SUMMARY_OVERALL_CSV, "w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=["metric", "value"])
-        writer.writeheader()
-        writer.writerows(overall_rows)
-
-    by_bacterium = defaultdict(lambda: {
-        "n_reads": 0,
-        "kmer_correct": 0,
-        "minimap_correct": 0,
-        "methods_agree": 0,
-        "kmer_predictions": Counter(),
-        "minimap_predictions": Counter(),
-    })
-
-    for row in comparison_rows:
-        true_label = row.get("true_label", "").strip() or "UNKNOWN"
-        kmer_predicted = row.get("kmer_predicted", "").strip()
-        minimap_predicted = row.get("minimap_predicted", "").strip()
-
-        stats = by_bacterium[true_label]
-        stats["n_reads"] += 1
-
-        if as_bool(row.get("kmer_correct")):
-            stats["kmer_correct"] += 1
-
-        if as_bool(row.get("minimap_correct")):
-            stats["minimap_correct"] += 1
-
-        if as_bool(row.get("methods_agree")):
-            stats["methods_agree"] += 1
-
-        if kmer_predicted:
-            stats["kmer_predictions"][kmer_predicted] += 1
-
-        if minimap_predicted:
-            stats["minimap_predictions"][minimap_predicted] += 1
-        else:
-            stats["minimap_predictions"]["UNMAPPED"] += 1
-
-    bacteria_rows = []
-
-    for bacterium, stats in sorted(by_bacterium.items()):
-        n_reads = stats["n_reads"]
-
-        bacteria_rows.append({
-            "bacterium": bacterium,
-            "n_reads": n_reads,
-            "kmer_correct": stats["kmer_correct"],
-            "kmer_accuracy": f"{stats['kmer_correct'] / n_reads:.6f}",
-            "minimap2_correct": stats["minimap_correct"],
-            "minimap2_accuracy": f"{stats['minimap_correct'] / n_reads:.6f}",
-            "methods_agree": stats["methods_agree"],
-            "methods_agreement": f"{stats['methods_agree'] / n_reads:.6f}",
-            "kmer_predicted_counts": format_counts(stats["kmer_predictions"]),
-            "minimap2_predicted_counts": format_counts(stats["minimap_predictions"]),
-        })
-
-    fieldnames = [
-        "bacterium",
-        "n_reads",
-        "kmer_correct",
-        "kmer_accuracy",
-        "minimap2_correct",
-        "minimap2_accuracy",
-        "methods_agree",
-        "methods_agreement",
-        "kmer_predicted_counts",
-        "minimap2_predicted_counts",
-    ]
-
-    with open(SUMMARY_BY_BACTERIUM_CSV, "w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=fieldnames)
-        writer.writeheader()
-        writer.writerows(bacteria_rows)
-
-    print(f"[INFO] Ukupni rezultati spremljeni u: {SUMMARY_OVERALL_CSV}")
-    print(f"[INFO] Rezultati po bakteriji spremljeni u: {SUMMARY_BY_BACTERIUM_CSV}")
-
-
 def run_method_comparison(kmer_results, minimap_results):
+    """
+    Uspoređuje rezultate k-mer metode i minimap2 metode.
+
+    Računa accuracy za obje metode, slaganje metoda
+    i sprema agregirane CSV sažetke.
+    """
     print_section("3) USPOREDBA METODA")
 
     comparison = compare_methods(kmer_results, minimap_results)
@@ -305,12 +216,21 @@ def run_method_comparison(kmer_results, minimap_results):
     print(f"[RESULT] minimap2 accuracy: {minimap_accuracy:.4f}")
     print(f"[RESULT] slaganje metoda:   {agreement:.4f}")
 
-    save_aggregate_results(kmer_results, minimap_results, comparison)
+    save_aggregate_results(
+        kmer_results,
+        minimap_results,
+        comparison,
+        SUMMARY_OVERALL_CSV,
+        SUMMARY_BY_BACTERIUM_CSV,
+    )
 
     return comparison
 
 
 def run_reports_and_plots(kmer_results, minimap_results):
+    """
+    Generira tekstualne reportove, CSV reportove i grafove za obje metode.
+    """
     print_section("4) REPORTOVI I GRAFOVI")
 
     kmer_report = compute_classification_report(kmer_results)
@@ -363,7 +283,22 @@ def run_reports_and_plots(kmer_results, minimap_results):
 # =========================================================
 
 def main():
-    ensure_directories()
+    """
+    Glavna funkcija koja pokreće cijeli pipeline.
+
+    Redoslijed:
+    1. priprema direktorija
+    2. k-mer klasifikacija
+    3. minimap2 baseline
+    4. usporedba metoda
+    5. reportovi i grafovi
+    """
+    ensure_directories(
+        PROCESSED_DIR,
+        RESULTS_DIR,
+        PLOTS_DIR,
+        MINIMAP_DIR,
+    )
 
     kmer_results = run_kmer_classification()
     minimap_results = run_minimap2_baseline()

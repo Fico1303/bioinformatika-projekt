@@ -1,3 +1,5 @@
+# Kod napisao: Domagoj Matković
+
 from pathlib import Path
 import csv
 
@@ -47,7 +49,7 @@ def save_report_csv(report: dict, output_path: Path) -> None:
 
 
 def plot_accuracy_comparison(kmer_results, minimap_results, output_path: Path) -> None:
-    from evaluation import compute_accuracy
+    from metrics import compute_accuracy
 
     kmer_acc = compute_accuracy(kmer_results)
     minimap_acc = compute_accuracy(minimap_results)

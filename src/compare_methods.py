@@ -1,3 +1,5 @@
+# Kod napisao: Domagoj Matković
+
 from pathlib import Path
 import csv
 from collections import defaultdict, Counter
@@ -21,6 +23,13 @@ SUMMARY_BY_BACTERIUM_CSV = RESULTS_DIR / "summary_by_bacterium.csv"
 
 
 def as_bool(value) -> bool:
+    """
+    Pretvori vrijednost u boolean.
+
+    Podržava:
+    - stvarne bool vrijednosti
+    - tekstualne vrijednosti poput true, 1, yes i da
+    """
     if isinstance(value, bool):
         return value
 
@@ -28,10 +37,23 @@ def as_bool(value) -> bool:
 
 
 def format_counts(counter: Counter) -> str:
+    """
+    Formatira Counter u tekstualni oblik pogodan za spremanje u CSV.
+
+    Primjer:
+    label1=10; label2=5
+    """
     return "; ".join(f"{label}={count}" for label, count in counter.items())
 
 
 def save_aggregate_results(kmer_results, minimap_results, comparison_rows) -> None:
+    """
+    Sprema agregirane rezultate evaluacije u CSV datoteke.
+
+    Sprema:
+    - ukupne metrike za obje metode
+    - rezultate grupirane po stvarnoj bakteriji
+    """
     kmer_accuracy = compute_accuracy(kmer_results)
     minimap_accuracy = compute_accuracy(minimap_results)
     agreement = compute_agreement(comparison_rows)
@@ -122,6 +144,12 @@ def save_aggregate_results(kmer_results, minimap_results, comparison_rows) -> No
 
 
 def main():
+    """
+    Glavna funkcija za izračun i spremanje sažetka evaluacije.
+
+    Učitava rezultate obje metode, uspoređuje ih,
+    računa metrike i sprema ukupne rezultate te rezultate po bakteriji.
+    """
     print("[INFO] Učitavam k-mer rezultate...")
     kmer_results = load_results_csv(KMER_CSV)
 

@@ -1,3 +1,5 @@
+# Kod napisao: Filip Paić
+
 from pathlib import Path
 from typing import List, Dict
 import csv
@@ -11,51 +13,45 @@ def extract_true_label(read_id: str) -> str:
     return read_id.split("|")[0]
 
 
+def add_true_label_to_row(row: Dict[str, object]) -> Dict[str, object]:
+    """
+    Doda true_label jednom retku.
+    """
+    new_row = dict(row)
+    new_row["true_label"] = extract_true_label(str(row["read_id"]))
+    return new_row
+
+
 def add_true_labels(results: List[Dict[str, object]]) -> List[Dict[str, object]]:
     """
     Svakom retku doda true_label na temelju read_id.
     """
-    updated = []
+    return [
+        add_true_label_to_row(row)
+        for row in results
+    ]
 
-    for row in results:
-        new_row = dict(row)
-        new_row["true_label"] = extract_true_label(str(row["read_id"]))
-        updated.append(new_row)
 
-    return updated
+def add_correct_flag_to_row(row: Dict[str, object]) -> Dict[str, object]:
+    """
+    Doda is_correct jednom retku.
+    """
+    new_row = dict(row)
+    new_row["is_correct"] = (
+        str(new_row.get("true_label", "")) ==
+        str(new_row.get("predicted_label", ""))
+    )
+    return new_row
 
 
 def add_correct_flag(results: List[Dict[str, object]]) -> List[Dict[str, object]]:
     """
-    Dodaje stupac is_correct.
+    Dodaje stupac is_correct svakom retku.
     """
-    updated = []
-
-    for row in results:
-        new_row = dict(row)
-        new_row["is_correct"] = (
-            str(new_row.get("true_label", "")) == str(new_row.get("predicted_label", ""))
-        )
-        updated.append(new_row)
-
-    return updated
-
-
-def compute_accuracy(results: List[Dict[str, object]]) -> float:
-    """
-    Izračuna točnost klasifikacije.
-    """
-    if not results:
-        return 0.0
-
-    correct = 0
-    total = len(results)
-
-    for row in results:
-        if str(row["true_label"]) == str(row["predicted_label"]):
-            correct += 1
-
-    return correct / total
+    return [
+        add_correct_flag_to_row(row)
+        for row in results
+    ]
 
 
 def save_results_csv(results: List[Dict[str, object]], output_path: Path) -> None:
@@ -68,6 +64,7 @@ def save_results_csv(results: List[Dict[str, object]], output_path: Path) -> Non
         raise ValueError("Nema rezultata za spremanje u CSV.")
 
     all_keys = set()
+
     for row in results:
         all_keys.update(row.keys())
 
@@ -84,12 +81,22 @@ def save_results_csv(results: List[Dict[str, object]], output_path: Path) -> Non
         "identity",
     ]
 
-    remaining = sorted(k for k in all_keys if k not in preferred_order)
-    fieldnames = [k for k in preferred_order if k in all_keys] + remaining
+    remaining = sorted(
+        key
+        for key in all_keys
+        if key not in preferred_order
+    )
+
+    fieldnames = [
+        key
+        for key in preferred_order
+        if key in all_keys
+    ] + remaining
 
     with open(output_path, "w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
         writer.writeheader()
+
         for row in results:
             writer.writerow(row)
 
@@ -108,10 +115,22 @@ def load_results_csv(input_path: Path) -> List[Dict[str, str]]:
 
 def compare_methods(
     kmer_results: List[Dict[str, object]],
-    minimap_results: List[Dict[str, object]]
+    minimap_results: List[Dict[str, object]],
 ) -> List[Dict[str, object]]:
     """
     Spoji rezultate k-mer i minimap metode po read_id.
+
+    Rezultat sadrži:
+    - read_id
+    - true_label
+    - kmer_predicted
+    - kmer_correct
+    - kmer_best_score
+    - minimap_predicted
+    - minimap_correct
+    - minimap_mapq
+    - minimap_identity
+    - methods_agree
     """
     minimap_by_read = {
         str(row["read_id"]): row
@@ -152,32 +171,49 @@ def compare_methods(
     return comparison
 
 
-def compute_agreement(comparison_rows: List[Dict[str, object]]) -> float:
+def save_comparison_csv(
+    comparison_rows: List[Dict[str, object]],
+    output_path: Path,
+) -> None:
     """
-    Koliki je udio readova na kojima se metode slažu.
+    Spremi usporedbu k-mer i minimap metode u CSV.
     """
-    valid = [row for row in comparison_rows if row.get("methods_agree") != ""]
-    if not valid:
-        return 0.0
+    output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    agree = sum(1 for row in valid if row["methods_agree"] in [True, "True", "true", "TRUE"])
-    return agree / len(valid)
+    if not comparison_rows:
+        raise ValueError("Nema usporednih rezultata za spremanje u CSV.")
 
-def add_true_label_to_row(row: Dict[str, object]) -> Dict[str, object]:
-    """
-    Doda true_label jednom retku.
-    """
-    new_row = dict(row)
-    new_row["true_label"] = extract_true_label(str(row["read_id"]))
-    return new_row
+    fieldnames = [
+        "read_id",
+        "true_label",
+        "kmer_predicted",
+        "kmer_correct",
+        "kmer_best_score",
+        "minimap_predicted",
+        "minimap_correct",
+        "minimap_mapq",
+        "minimap_identity",
+        "methods_agree",
+    ]
 
+    all_keys = set()
 
-def add_correct_flag_to_row(row: Dict[str, object]) -> Dict[str, object]:
-    """
-    Doda is_correct jednom retku.
-    """
-    new_row = dict(row)
-    new_row["is_correct"] = (
-        str(new_row.get("true_label", "")) == str(new_row.get("predicted_label", ""))
+    for row in comparison_rows:
+        all_keys.update(row.keys())
+
+    remaining = sorted(
+        key
+        for key in all_keys
+        if key not in fieldnames
     )
-    return new_row
+
+    fieldnames = [
+        key
+        for key in fieldnames
+        if key in all_keys
+    ] + remaining
+
+    with open(output_path, "w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(comparison_rows)

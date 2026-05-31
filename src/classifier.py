@@ -1,3 +1,5 @@
+# Kod napisao: Domagoj Matković
+
 from typing import Dict, Iterator, Tuple
 from math import sqrt
 from Bio.SeqRecord import SeqRecord
